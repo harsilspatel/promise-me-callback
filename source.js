@@ -1,41 +1,43 @@
-
-const x = () => {
-
-  AlertModel.AAAAAAAAAAAAAAAAAAAAAAAAAAAAA(project.projectId);
-  
-  BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB.findAlertsWithPaging(project.projectId, mfukcker, function (error, resultAlerts) {
-    if (error === true) {
-      Logger.shit("asldfkj")
-      throw ApiError.handleError(formattedError);
-    } else {
-      console.log("alskdjf")
-      h.response(null, resultAlerts);
-    }
-    return "shit"
-  });
-
-  return ZZZZZZZZZZZZZZZZ.alskdjflaskjdklfajsdf(project.projectId, mfukcker, function (error, resultAlerts) {
-    if (error){
-      throw ApiError.handleError(e)
-    }
-    helper.checkAccess(request, function (e) {
-      if (e) {
-        return h.response(e);
-      } else {
-        return h.continue;
-      }
-    });
-    return h.response(null, resultAlerts);
-  });
-
-  let x = shit(y, a, x, (a, b) => {})};
-
-  server.ext('onPostAuth', function (request, h) {
-    helper.checkAccess(request, function (error) {
+async.waterfall(
+    [
+      function (next) {
+        if (_.isEmpty(deviceId)) {
+          logger.debug('validateCustomerDeviceAuthentication - missing deviceId');
+          next(boom.unauthorized(null, 'basic')); // empty message - allow to try another strategy);
+        } else {
+          deviceId = deviceId.toUpperCase();
+          next(null);
+        }
+      },
+      (next) => {
+        validateProjectAndChannel(projectId, channelId, channelKey, true, function (error, project) {
+          next(error, project);
+        });
+      },
+      function (project, next) {
+        CustomerModel.findActiveCustomerByDeviceId(project.projectId, deviceId, function (error, customer) {
+          if (error || _.isEmpty(customer)) {
+            next(boom.unauthorized(null, 'basic')); // empty message - allow to try another strategy
+          } else {
+            next(null, project, customer);
+          }
+        });
+      },
+    ],
+    function completed(error, project, customer) {
       if (error) {
-        return h.response(error);
-      } else {
-        return h.continue;
+        logger.debug('validateCustomerDeviceAuthentication failed');
+        logger.debug('projectId: ' + projectId);
+        logger.debug('channelId: ' + channelId);
+        logger.debug('channelKey: ' + channelKey);
+        logger.debug('deviceId: ' + deviceId);
+        return callback(error);
       }
-    });
-});
+      callback(null, true, {
+        project: project,
+        customer: customer,
+        deviceId: deviceId,
+        strategy: common.AUTH_STRATEGY_SIMPLE_CUSTOMER_DEVICE,
+      });
+    },
+  );
