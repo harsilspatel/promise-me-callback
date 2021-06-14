@@ -75,15 +75,14 @@ export default function transformer(file, api) {
     const lastParam = p.node.params[params.length - 1];
 
     const formattedBody = j(p.node.body)
-      .find(j.CallExpression, { callee: { name: lastParam.name } })
+      .find(j.ExpressionStatement, { expression: { callee: { name: lastParam.name } } })
       .replaceWith((p) => {
-        const errorArg = p.node.arguments[0];
-        console.log("errorArg", errorArg);
+        const errorArg = p.node.expression.arguments[0];
 
-        if (errorArg.type === "Literal" && errorArg.value === null) {
-          return null;
-        } else {
+        if (p.node.expression.arguments.length === 1 && !(errorArg.type === "Literal" && errorArg.value === null)) {
           return j.throwStatement(errorArg);
+        } else {
+          return null;
         }
       });
     return p.node.body;
@@ -102,7 +101,7 @@ export default function transformer(file, api) {
       const wfFns = j(wf.node.arguments[0]);
       wfFns.find(j.CallExpression).filter(hasCallback).replaceWith(awaitFn);
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
-    	wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+      wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
 
       // wfFns.forEach((fn) => j(fn).map(removeWrapperFn));
     })
