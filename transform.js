@@ -67,7 +67,7 @@ export default function transformer(file, api) {
 
     const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
-    return tryCatch ? tryStatement: tryContents;
+    return tryCatch ? tryStatement : tryContents;
   };
 
   const filterImmediateFns = (p) => p.parent.node.type === "ArrayExpression";
@@ -99,6 +99,11 @@ export default function transformer(file, api) {
       }
     })
     .forEach((wf) => {
+      j(wf).replaceWith((p) => {
+        console.log("p", p.node);
+      });
+      return;
+
       const wfFns = j(wf.node.arguments[0]);
       wfFns
         .find(j.CallExpression)
@@ -106,6 +111,11 @@ export default function transformer(file, api) {
         .replaceWith(awaitFn({ tryCatch: false }));
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+      j(wf)
+        .replaceWith(awaitFn({ tryCatch: true }))
+        .replaceWith((p) => {
+          console.log("p", p.node);
+        });
 
       // wfFns.forEach((fn) => j(fn).map(removeWrapperFn));
     })
