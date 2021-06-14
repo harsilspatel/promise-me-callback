@@ -12,7 +12,7 @@ export default function transformer(file, api) {
     }
   };
 
-  const awaitFn = (p) => {
+  const awaitFn = ({ tryCatch }) => (p) => {
     // ensure parent function is converted to an `await` fn
     let parent = p.parent;
     while (parent) {
@@ -65,8 +65,9 @@ export default function transformer(file, api) {
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
-    const tryStatement = j.tryStatement(j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]), j.catchClause(firstParam, null, catchBody));
-    return tryStatement;
+    const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
+    const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
+    return tryCatch ? tryStatement: tryContents;
   };
 
   const filterImmediateFns = (p) => p.parent.node.type === "ArrayExpression";
@@ -99,7 +100,10 @@ export default function transformer(file, api) {
     })
     .forEach((wf) => {
       const wfFns = j(wf.node.arguments[0]);
-      wfFns.find(j.CallExpression).filter(hasCallback).replaceWith(awaitFn);
+      wfFns
+        .find(j.CallExpression)
+        .filter(hasCallback)
+        .replaceWith(awaitFn({ tryCatch: false }));
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
 

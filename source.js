@@ -1,3 +1,12 @@
+
+if (_.isEmpty(deviceId)) {
+        logger.debug('validateCustomerDeviceAuthentication - missing deviceId');
+        throw boom.unauthorized(null, 'basic');
+      } else {
+        deviceId = deviceId.toUpperCase();
+      }
+console.log("")
+
 async.waterfall(
     [
       function (next) {
