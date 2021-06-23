@@ -1,6 +1,42 @@
 // Press ctrl+space for code completion
 export default function transformer(file, api) {
   const j = api.jscodeshift;
+  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn } = getFns(j);
+
+  return j(file.source)
+    .find(j.CallExpression, {
+      callee: {
+        object: {
+          name: "async"
+        },
+        property: { name: "waterfall" }
+      }
+    })
+    .forEach((wf) => {
+      //    j(wf).replaceWith((p) => {
+      //      console.log("p", p.node);
+      //    });
+      //     return;
+
+      const wfFns = j(wf.node.arguments[0]);
+      wfFns
+        .find(j.CallExpression)
+        .filter(hasCallback)
+        .replaceWith(awaitFn({ tryCatch: false }));
+      wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+      wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+      j(wf).replaceWith(awaitFn({ tryCatch: true }));
+      // .replaceWith((p) => {
+      //   console.log("p", p.node);
+      // });
+
+      // wfFns.forEach((fn) => j(fn).map(removeWrapperFn));
+    })
+    .toSource();
+}
+
+// hoisting and definiing fns at the end so i don't have to keep scrolling down
+function getFns(j) {
   const isFnNode = (n) => ["FunctionExpression", "ArrowFunctionExpression"].includes(n.type);
   const hasCallback = (p) => {
     try {
@@ -89,35 +125,11 @@ export default function transformer(file, api) {
     return p.node.body;
   };
 
-  return j(file.source)
-    .find(j.CallExpression, {
-      callee: {
-        object: {
-          name: "async"
-        },
-        property: { name: "waterfall" }
-      }
-    })
-    .forEach((wf) => {
-      j(wf).replaceWith((p) => {
-        console.log("p", p.node);
-      });
-      return;
-
-      const wfFns = j(wf.node.arguments[0]);
-      wfFns
-        .find(j.CallExpression)
-        .filter(hasCallback)
-        .replaceWith(awaitFn({ tryCatch: false }));
-      wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
-      wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
-      j(wf)
-        .replaceWith(awaitFn({ tryCatch: true }))
-        .replaceWith((p) => {
-          console.log("p", p.node);
-        });
-
-      // wfFns.forEach((fn) => j(fn).map(removeWrapperFn));
-    })
-    .toSource();
+  return {
+    isFnNode,
+    hasCallback,
+    awaitFn,
+    filterImmediateFns,
+    removeWrapperFn
+  };
 }
