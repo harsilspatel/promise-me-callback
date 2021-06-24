@@ -7,9 +7,9 @@ async.waterfall(
         } else {	
           deviceId = deviceId.toUpperCase();	
           next(null);	
-        }	
+        }
       },	
-      (next) => {	
+      function (next) {	
         validateProjectAndChannel(projectId, channelId, channelKey, true, function (error, project) {	
           next(error, project);	
         });	

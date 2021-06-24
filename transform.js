@@ -23,6 +23,7 @@ export default function transformer(file, api) {
         .find(j.CallExpression)
         .filter(hasCallback)
         .replaceWith(awaitFn({ tryCatch: false }));
+      console.log("wf.node", wf.node);
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf).replaceWith(awaitFn({ tryCatch: true }));
@@ -37,6 +38,9 @@ export default function transformer(file, api) {
 
 // hoisting and definiing fns at the end so i don't have to keep scrolling down
 function getFns(j) {
+  function toArray(value) {
+    return Array.isArray(value) ? value : [value];
+  }
   const isFnNode = (n) => ["FunctionExpression", "ArrowFunctionExpression"].includes(n.type);
   const hasCallback = (p) => {
     try {
@@ -102,6 +106,7 @@ function getFns(j) {
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
     const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
+    console.log("tryContents", tryCatch, tryContents);
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
     return tryCatch ? tryStatement : tryContents;
   };
@@ -109,19 +114,30 @@ function getFns(j) {
   const filterImmediateFns = (p) => p.parent.node.type === "ArrayExpression";
   const removeWrapperFn = (p) => {
     const params = p.node.params;
+    // get fn's last arg, most cases it will be `next`
     const lastParam = p.node.params[params.length - 1];
 
     const formattedBody = j(p.node.body)
+      // find all next() calls
       .find(j.ExpressionStatement, { expression: { callee: { name: lastParam.name } } })
       .replaceWith((p) => {
         const errorArg = p.node.expression.arguments[0];
 
+        // if it is like next(something) then it likely is an error
         if (p.node.expression.arguments.length === 1 && !(errorArg.type === "Literal" && errorArg.value === null)) {
           return j.throwStatement(errorArg);
         } else {
+          // else don't replace it with anything
           return null;
         }
       });
+
+    j(p).replaceWith((p) => {
+      console.log("just collection", p.node);
+      return p.node.body;
+    });
+    console.log("after");
+
     return p.node.body;
   };
 
