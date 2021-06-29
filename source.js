@@ -1,4 +1,3 @@
-
 function validateKong(request, callback) {
   logger.debug('validateKong');
     // Non-device user, e.g. dashboard user

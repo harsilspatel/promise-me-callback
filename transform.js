@@ -1,5 +1,5 @@
 export default function transformer(file, { jscodeshift: j }) {
-  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn, convertParentFnAsync } = getFns(j);
+  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn, convertParentFnAsync, createBlockStatement } = getFns(j);
 
   return j(file.source)
     .find(j.CallExpression, {
@@ -25,11 +25,7 @@ export default function transformer(file, { jscodeshift: j }) {
           const asyncWaterfallFns = wfBody.shift();
           const fns = asyncWaterfallFns.declarations[0].init.argument.arguments[0].elements;
 
-          // j.blockStatement(fns.concat(wfBody)) won't work
-          const blockStatement = j.blockStatement([]);
-          // call me hackerman
-          blockStatement.body = fns.concat(wfBody);
-          return blockStatement;
+          return createBlockStatement(fns.concat(wfBody));
         });
 
       // remove the async.waterfall() contents from block statement
@@ -55,6 +51,13 @@ function getFns(j) {
     } catch (e) {
       return false;
     }
+  };
+
+  const createBlockStatement = (contents) => {
+    // when j.blockStatement(contents) won't work
+    const block = j.blockStatement([]);
+    block.body = contents || []; // call me a hackerman
+    return block;
   };
 
   const convertParentFnAsync = (p) => {
@@ -115,9 +118,7 @@ function getFns(j) {
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
-    const stuff = [awaitWrapperExpr, ...afterAwaitExprs];
-    const tryContents = j.blockStatement([]);
-    tryContents.body = stuff;
+    const tryContents = createBlockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
 
     // when tryContents is false, ideally we should be returning tryContents.body but
@@ -157,6 +158,7 @@ function getFns(j) {
     isFnNode,
     hasCallback,
     awaitFn,
+    createBlockStatement,
     filterImmediateFns,
     removeWrapperFn,
     convertParentFnAsync
