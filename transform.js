@@ -16,7 +16,7 @@ export default function transformer(file, { jscodeshift: j }) {
         .find(j.CallExpression)
         .filter(hasCallback)
         .replaceWith(awaitFn({ tryCatch: false }));
-      return;
+
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf)
@@ -145,17 +145,30 @@ function getFns(j) {
 
     const formattedBody = j(p.node.body)
       // find all next() calls
-      .find(j.ExpressionStatement, { expression: { callee: { name: lastParam.name } } })
+      .find(j.CallExpression, { callee: { name: lastParam.name } })
       .replaceWith((p) => {
-        const errorArg = p.node.expression.arguments[0];
+        const cbHandlerArgs = p.node.arguments;
+        const argsLength = cbHandlerArgs.length;
+        if (argsLength === 0) return null;
 
-        // if it is like next(something) then it likely is an error
-        if (p.node.expression.arguments.length === 1 && !(errorArg.type === "Literal" && errorArg.value === null)) {
-          return j.throwStatement(errorArg);
+        let replacementNode = null;
+        const errorArg = cbHandlerArgs[0];
+        // TODO(harsilspatel): handle return next(err, <>) instances
+        // if it is like next(<singleParam>) then it likely is an error
+        if (argsLength === 1 && !(errorArg.type === "Literal" && errorArg.value === null)) {
+          replacementNode = j.throwStatement(errorArg);
+        } else if (argsLength === 1) {
+          // if it's next(null) then simply remove it
+          replacementNode = null;
         } else {
-          // else don't replace it with anything
-          return null;
+          // return single argument or return array of multiple elements
+          // remove error from return
+          cbHandlerArgs.shift(); // argsLength length changes here
+          console.log("p", p.parent.node);
+          replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
         }
+        // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
+        j(p.parent).replaceWith(replacementNode);
       });
 
     // remove the stuff from fn body
@@ -173,3 +186,23 @@ function getFns(j) {
     removeWrappingParenthesis
   };
 }
+/*
+TODO handle async.waterfall() scenarios like:
+function completed(err, project, attendant) {
+      if (err) {
+        console.log("shiz");
+        return callback(err);
+      }
+      return callback(null, true, {
+        project,
+        attendant,
+        attendantId,
+        strategy: common.AUTH_STRATEGY_KONG,
+      });
+    },
+  );
+  
+1. should not overwrite "shiz"
+2. should be able to return instead of callback(<>, <>, <>)
+
+*/
