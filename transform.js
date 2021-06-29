@@ -1,4 +1,4 @@
-export default function transformer(file, {jscodeshift: j}) {
+export default function transformer(file, { jscodeshift: j }) {
   const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn } = getFns(j);
 
   return j(file.source)
@@ -21,9 +21,22 @@ export default function transformer(file, {jscodeshift: j}) {
         .find(j.CallExpression)
         .filter(hasCallback)
         .replaceWith(awaitFn({ tryCatch: false }));
-    //  wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
-    //  wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
-    //  j(wf).replaceWith(awaitFn({ tryCatch: true })).replaceWith(p => {console.log("p", p.node); return j.blockStatement(p.node.block.body[0].declarations[0].init.argument.arguments[0].elements)});
+      wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+      wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+      j(wf)
+        .replaceWith(awaitFn({ tryCatch: true }))
+        .replaceWith((p) => {
+          const wfBody = p.node.block.body;
+          const asyncWaterfallFns = wfBody.shift();
+          const fns = asyncWaterfallFns.declarations[0].init.argument.arguments[0].elements;
+          console.log("fns", fns);
+
+          // j.blockStatement(fns, wfBody) won't work
+          const blockStatement = j.blockStatement([]);
+          // call me hackerman
+          blockStatement.body = fns.concat(wfBody);
+          return blockStatement;
+        });
     })
     .toSource();
 }
@@ -54,7 +67,6 @@ function getFns(j) {
       }
       parent = parent.parent;
     }
-    console.log("parentttt", parent.node)
 
     // the CallExpression's arguments
     const argLen = p.node.arguments.length;
@@ -99,15 +111,13 @@ function getFns(j) {
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
     const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
-    console.log("tryContents", tryContents)
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
-    
+
     // when tryContents is false, ideally we should be returning tryContents.body but
     // there is no way to do it so attaching it to parent fn's body
-    if (tryCatch)
-      return tryStatement;
+    if (tryCatch) return tryStatement;
     else {
-      parent.node.body = tryContents
+      parent.node.body = tryContents;
     }
   };
 
