@@ -115,7 +115,9 @@ function getFns(j) {
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
-    const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
+    const stuff = [awaitWrapperExpr, ...afterAwaitExprs];
+    const tryContents = j.blockStatement([]);
+    tryContents.body = stuff;
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
 
     // when tryContents is false, ideally we should be returning tryContents.body but

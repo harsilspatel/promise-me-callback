@@ -1,47 +1,50 @@
-() => {
-  console.log("before");
+
+function validateKong(request, callback) {
+  logger.debug('validateKong');
+    // Non-device user, e.g. dashboard user
   async.waterfall(
     [
       function (next) {
-        if (_.isEmpty(deviceId)) {
-          logger.debug("validateCustomerDeviceAuthentication - missing deviceId");
-          next(boom.unauthorized(null, "basic")); // empty message - allow to try another strategy);
-        } else {
-          deviceId = deviceId.toUpperCase();
-          next(null);
-        }
-      },
-      (next) => {
-        validateProjectAndChannel(projectId, channelId, channelKey, true, function (error, project) {
-          next(error, project);
+        validateProject(projectId, function (err, project) {
+          next(err, project);
         });
       },
       function (project, next) {
-        CustomerModel.findActiveCustomerByDeviceId(project.projectId, deviceId, function (error, customer) {
-          if (error || _.isEmpty(customer)) {
-            next(boom.unauthorized(null, "basic")); // empty message - allow to try another strategy
+        if (isServerRequest) return next(null, project, null);
+        AttendantModel.findOne({ _id: attendantId, deleted: false }, function (error, attendant) {
+          if (error) {
+            logger.error('Error occurred while retrieving attendant');
+            next(ApiError.unauthorized());
+          } else if (!attendant) {
+            logger.error('Attendant not found');
+            next(ApiError.unauthorized());
           } else {
-            next(null, project, customer);
+            next(null, project, attendant);
           }
         });
       },
+      function (project, attendant, next) {
+        if (isServerRequest) return next(null, project, null);
+        if (attendantId !== attendant._id.toString()) {
+          logger.error('attendantId mismatch error between kong and CnC');
+          next(ApiError.unauthorized());
+        } else {
+          updateUserId(attendant, userId, function (err, updatedAttendant) {
+            next(err, project, attendant);
+          });
+        }
+      },
     ],
-    function completed(error, project, customer) {
-      if (error) {
-        logger.debug("validateCustomerDeviceAuthentication failed");
-        logger.debug("projectId: " + projectId);
-        logger.debug("channelId: " + channelId);
-        logger.debug("channelKey: " + channelKey);
-        logger.debug("deviceId: " + deviceId);
-        return callback(error);
+    function completed(err, project, attendant) {
+      if (err) {
+        return callback(err);
       }
-      callback(null, true, {
-        project: project,
-        customer: customer,
-        deviceId: deviceId,
-        strategy: common.AUTH_STRATEGY_SIMPLE_CUSTOMER_DEVICE,
+      return callback(null, true, {
+        project,
+        attendant,
+        attendantId,
+        strategy: common.AUTH_STRATEGY_KONG,
       });
-    }
+    },
   );
-  console.log("after");
-};
+}
