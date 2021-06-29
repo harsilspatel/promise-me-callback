@@ -1,5 +1,5 @@
 export default function transformer(file, { jscodeshift: j }) {
-  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn, convertParentFnAsync, createBlockStatement } = getFns(j);
+  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn, convertParentFnAsync, createBlockStatement, removeWrappingParenthesis } = getFns(j);
 
   return j(file.source)
     .find(j.CallExpression, {
@@ -16,6 +16,7 @@ export default function transformer(file, { jscodeshift: j }) {
         .find(j.CallExpression)
         .filter(hasCallback)
         .replaceWith(awaitFn({ tryCatch: false }));
+      return;
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf)
@@ -29,10 +30,8 @@ export default function transformer(file, { jscodeshift: j }) {
         });
 
       // remove the async.waterfall() contents from block statement
-      // and
-      const wfParentBody = wf.parent.parent.node.body;
-      const asyncWfIndex = wfParentBody.indexOf(wf.parent.node);
-      wfParentBody.splice(asyncWfIndex, 1, ...wf.node.body);
+      // and insert it in parent's body
+      removeWrappingParenthesis(wf, wf.node.body);
     })
     .toSource();
 }
@@ -70,6 +69,15 @@ function getFns(j) {
       parent = parent.parent;
     }
     return parent;
+  };
+
+  const removeWrappingParenthesis = (p, replacementContents) => {
+    const parentNode = p.parent.node;
+    const grandparentNodeBody = p.parent.parent.node.body;
+    const parentNodePosition = grandparentNodeBody.indexOf(parentNode);
+
+    // remove parentNode and replace it with `removeWrappingParenthesis`
+    grandparentNodeBody.splice(parentNodePosition, 1, ...replacementContents);
   };
 
   const awaitFn = ({ tryCatch }) => (p) => {
@@ -125,7 +133,7 @@ function getFns(j) {
     // there is no way to do it so attaching it to parent fn's body
     if (tryCatch) return tryStatement;
     else {
-      parent.node.body = tryContents;
+      removeWrappingParenthesis(p, tryContents.body);
     }
   };
 
@@ -161,6 +169,7 @@ function getFns(j) {
     createBlockStatement,
     filterImmediateFns,
     removeWrapperFn,
-    convertParentFnAsync
+    convertParentFnAsync,
+    removeWrappingParenthesis
   };
 }
