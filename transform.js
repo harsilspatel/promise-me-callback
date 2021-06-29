@@ -1,5 +1,5 @@
 export default function transformer(file, { jscodeshift: j }) {
-  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn } = getFns(j);
+  const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn, convertParentFnAsync } = getFns(j);
 
   return j(file.source)
     .find(j.CallExpression, {
@@ -11,11 +11,6 @@ export default function transformer(file, { jscodeshift: j }) {
       }
     })
     .forEach((wf) => {
-      //    j(wf).replaceWith((p) => {
-      //      console.log("p", p.node);
-      //    });
-      //     return;
-
       const wfFns = j(wf.node.arguments[0]);
       wfFns
         .find(j.CallExpression)
@@ -29,14 +24,19 @@ export default function transformer(file, { jscodeshift: j }) {
           const wfBody = p.node.block.body;
           const asyncWaterfallFns = wfBody.shift();
           const fns = asyncWaterfallFns.declarations[0].init.argument.arguments[0].elements;
-          console.log("fns", fns);
 
-          // j.blockStatement(fns, wfBody) won't work
+          // j.blockStatement(fns.concat(wfBody)) won't work
           const blockStatement = j.blockStatement([]);
           // call me hackerman
           blockStatement.body = fns.concat(wfBody);
           return blockStatement;
         });
+
+      // remove the async.waterfall() contents from block statement
+      // and
+      const wfParentBody = wf.parent.parent.node.body;
+      const asyncWfIndex = wfParentBody.indexOf(wf.parent.node);
+      wfParentBody.splice(asyncWfIndex, 1, ...wf.node.body);
     })
     .toSource();
 }
@@ -57,8 +57,7 @@ function getFns(j) {
     }
   };
 
-  const awaitFn = ({ tryCatch }) => (p) => {
-    // ensure parent function is converted to an `await` fn
+  const convertParentFnAsync = (p) => {
     let parent = p.parent;
     while (parent) {
       if (isFnNode(parent.node)) {
@@ -67,6 +66,12 @@ function getFns(j) {
       }
       parent = parent.parent;
     }
+    return parent;
+  };
+
+  const awaitFn = ({ tryCatch }) => (p) => {
+    // ensure parent function is converted to an `await` fn
+    const parent = convertParentFnAsync(p);
 
     // the CallExpression's arguments
     const argLen = p.node.arguments.length;
@@ -151,6 +156,7 @@ function getFns(j) {
     hasCallback,
     awaitFn,
     filterImmediateFns,
-    removeWrapperFn
+    removeWrapperFn,
+    convertParentFnAsync
   };
 }
