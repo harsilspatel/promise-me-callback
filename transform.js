@@ -1,6 +1,6 @@
-// Press ctrl+space for code completion
-export default function transformer(file, api) {
-  const j = api.jscodeshift;
+import _ from "lodash";
+
+export default function transformer(file, {jscodeshift: j}) {
   const { isFnNode, hasCallback, awaitFn, filterImmediateFns, removeWrapperFn } = getFns(j);
 
   return j(file.source)
@@ -23,15 +23,9 @@ export default function transformer(file, api) {
         .find(j.CallExpression)
         .filter(hasCallback)
         .replaceWith(awaitFn({ tryCatch: false }));
-      console.log("wf.node", wf.node);
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
-      j(wf).replaceWith(awaitFn({ tryCatch: true }));
-      // .replaceWith((p) => {
-      //   console.log("p", p.node);
-      // });
-
-      // wfFns.forEach((fn) => j(fn).map(removeWrapperFn));
+      j(wf).replaceWith(awaitFn({ tryCatch: true })).replaceWith(p => {console.log("p", p.node); return j.blockStatement(p.node.block.body[0].declarations[0].init.argument.arguments[0].elements)});
     })
     .toSource();
 }
@@ -106,7 +100,6 @@ function getFns(j) {
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
     const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
-    console.log("tryContents", tryCatch, tryContents);
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
     return tryCatch ? tryStatement : tryContents;
   };
@@ -132,13 +125,8 @@ function getFns(j) {
         }
       });
 
-    j(p).replaceWith((p) => {
-      console.log("just collection", p.node);
-      return p.node.body;
-    });
-    console.log("after");
-
-    return p.node.body;
+    // remove the stuff from fn body
+    return p.node.body.body;
   };
 
   return {

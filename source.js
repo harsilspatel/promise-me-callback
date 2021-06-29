@@ -9,7 +9,7 @@ async.waterfall(
           next(null);	
         }
       },	
-      function (next) {	
+      (next) => {	
         validateProjectAndChannel(projectId, channelId, channelKey, true, function (error, project) {	
           next(error, project);	
         });	
