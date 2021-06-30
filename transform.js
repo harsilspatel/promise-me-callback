@@ -149,15 +149,16 @@ function getFns(j) {
         const ifParentBody = p.parent.node.body;
         const ifIndex = ifParentBody.indexOf(p.node);
         const everythingAfterIf = ifParentBody.splice(ifIndex + 1, ifParentBody.length);
-        console.log("replaceeeeeee", p.parent);
-        p.node.consequet = createBlockStatement(everythingAfterIf);
+        p.node.test = j.unaryExpression("!", p.node.test, true); // negate the if's test
+        p.node.consequent = createBlockStatement(everythingAfterIf);
       });
 
     const formattedBody = j(p.node.body)
       // find all next() calls
-      .find(j.CallExpression, { callee: { name: lastParam.name } })
+      .find(j.ExpressionStatement, {expression: { callee: { name: lastParam.name } }})
       .replaceWith((p) => {
-        const cbHandlerArgs = p.node.arguments;
+        console.log("p.node", p.node);
+        const cbHandlerArgs = p.node.expression.arguments;
         const argsLength = cbHandlerArgs.length;
         if (argsLength === 0) return null;
 
@@ -173,11 +174,12 @@ function getFns(j) {
         } else {
           // return single argument or return array of multiple elements
           // remove error from return
-          cbHandlerArgs.shift(); // argsLength length changes here
-          replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
+        //  cbHandlerArgs.shift(); // argsLength length changes here
+        //  replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
+          replacementNode = null;
         }
         // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
-        j(p.parent).replaceWith(replacementNode);
+        return replacementNode;
       });
 
     // remove the stuff from fn body
