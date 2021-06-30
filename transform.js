@@ -16,8 +16,7 @@ export default function transformer(file, { jscodeshift: j }) {
         .find(j.CallExpression)
         .filter(hasCallback)
         .replaceWith(awaitFn({ tryCatch: true }));
-
-      wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
+    wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf)
         .replaceWith(awaitFn({ tryCatch: true }))
@@ -72,6 +71,7 @@ function getFns(j) {
   };
 
   const removeWrappingParenthesis = (p, replacementContents) => {
+    console.log("shit");
     const parentNode = p.parent.node;
     const grandparentNodeBody = p.parent.parent.node.body;
     const parentNodePosition = grandparentNodeBody.indexOf(parentNode);
@@ -79,8 +79,14 @@ function getFns(j) {
     // remove parentNode and replace it with `removeWrappingParenthesis`
     grandparentNodeBody.splice(parentNodePosition, 1, ...replacementContents);
   };
+  
+  const addComment = (node, comment) => {
+      const comments = node.comments || [];
+      comments.push(j.commentLine(" TODO(codemods): No error clause found", true, false));
+      node.comments = comments;
+  }
 
-  const awaitFn = ({ tryCatch }) => (p) => {
+  const awaitFn = ({ }) => (p) => {
     // ensure parent function is converted to an `await` fn
     const parent = convertParentFnAsync(p);
 
@@ -109,7 +115,9 @@ function getFns(j) {
     // if more than 1 values then destructure variables from an
     const variableDeclaratorId = returnValuesCount > 1 ? j.arrayPattern(cbParams) : cbParams[0];
     // if it is returning a value declare the variable
-    const awaitWrapperExpr = hasReturnValue ? j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)]) : expressionStatement;
+    const variablesAssignment = j.expressionStatement(j.assignmentExpression("=", variableDeclaratorId, awaitExpression));
+    const variablesDeclaration = j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)])
+    const awaitWrapperExpr = hasReturnValue ? (hasCatchClause ? variablesAssignment :  variablesDeclaration) : expressionStatement;
 
     let afterAwaitExprs = [];
 
@@ -120,20 +128,17 @@ function getFns(j) {
       // remove the `if-else`
       callbackFn.body.body.shift();
     } else {
-      const comments = awaitWrapperExpr.comments || [];
-      comments.push(j.commentLine(" TODO(codemods): No error clause found", true, false));
-      awaitWrapperExpr.comments = comments;
+      addComment(awaitWrapperExpr, " TODO(codemods): No error clause found");
     }
     
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
-
-    const tryContents = createBlockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
+    const tryContents = j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
 
     // when tryContents is false, ideally we should be returning tryContents.body but
     // there is no way to do it so attaching it to parent fn's body
-    if (tryCatch && hasCatchClause) {
+    if (hasCatchClause) {
       return tryStatement;
     } else {
       removeWrappingParenthesis(p, tryContents.body);
