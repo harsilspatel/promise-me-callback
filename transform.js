@@ -92,21 +92,22 @@ function getFns(j) {
 
     // get the error identifier
     const firstParam = cbParams.shift();
-    const returnValues = cbParams.length;
-    const hasReturnValue = !!returnValues;
+    const returnValuesCount = cbParams.length;
+    const hasReturnValue = !!returnValuesCount;
 
     // check if there is an if statement checking for error
     const firstCbExpr = callbackFn.body.body[0];
     const hasCatchClause = firstCbExpr.type === "IfStatement" && firstCbExpr.test.type === "Identifier" && firstCbExpr.test.name === firstParam.name;
     // if there is, then all it's contents go to the body of `catch` clause
     const catchBody = hasCatchClause ? firstCbExpr.consequent : j.blockStatement([]);
+    
 
     // create await expression
     const awaitExpression = j.awaitExpression(j.callExpression(p.node.callee, p.node.arguments));
     const expressionStatement = j.expressionStatement(awaitExpression);
 
     // if more than 1 values then destructure variables from an
-    const variableDeclaratorId = returnValues > 1 ? j.arrayPattern(cbParams) : cbParams[0];
+    const variableDeclaratorId = returnValuesCount > 1 ? j.arrayPattern(cbParams) : cbParams[0];
     // if it is returning a value declare the variable
     const awaitWrapperExpr = hasReturnValue ? j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)]) : expressionStatement;
 
@@ -114,7 +115,8 @@ function getFns(j) {
 
     // if the catch clause is found then everything inside `else` will go below await statement
     if (hasCatchClause) {
-      afterAwaitExprs = afterAwaitExprs.concat(firstCbExpr.alternate ? firstCbExpr.alternate.body : []);
+      // if the alternate an else-if then we have to concat `firstCbExpr.alternate` else it will be a blockStatement so concat `firstCbExpr.alternate.body`
+      afterAwaitExprs = afterAwaitExprs.concat(firstCbExpr.alternate ? (firstCbExpr.alternate.body || firstCbExpr.alternate) || []: []);
       // remove the `if-else`
       callbackFn.body.body.shift();
     } else {
@@ -122,7 +124,7 @@ function getFns(j) {
       comments.push(j.commentLine(" TODO(codemods): No error clause found", true, false));
       awaitWrapperExpr.comments = comments;
     }
-
+    
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 

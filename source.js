@@ -14,10 +14,8 @@ function validateKong(request, callback) {
           if (error) {
             logger.error('Error occurred while retrieving attendant');
             next(ApiError.unauthorized());
-          } else if (!attendant) {
-            logger.error('Attendant not found');
-            next(ApiError.unauthorized());
           } else {
+            console.log("bleh");
             next(null, project, attendant);
           }
         });
