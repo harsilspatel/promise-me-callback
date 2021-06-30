@@ -143,6 +143,16 @@ function getFns(j) {
     // get fn's last arg, most cases it will be `next`
     const lastParam = p.node.params[params.length - 1];
 
+    j(p.node.body)
+      .find(j.IfStatement, { consequent: { type: "ReturnStatement", argument: { type: "CallExpression", callee: { name: lastParam.name } } } })
+      .forEach((p) => {
+        const ifParentBody = p.parent.node.body;
+        const ifIndex = ifParentBody.indexOf(p.node);
+        const everythingAfterIf = ifParentBody.splice(ifIndex + 1, ifParentBody.length);
+        console.log("replaceeeeeee", p.parent);
+        p.node.consequet = createBlockStatement(everythingAfterIf);
+      });
+
     const formattedBody = j(p.node.body)
       // find all next() calls
       .find(j.CallExpression, { callee: { name: lastParam.name } })
@@ -164,7 +174,6 @@ function getFns(j) {
           // return single argument or return array of multiple elements
           // remove error from return
           cbHandlerArgs.shift(); // argsLength length changes here
-          console.log("p", p.parent.node);
           replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
         }
         // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
@@ -204,5 +213,4 @@ function completed(err, project, attendant) {
   
 1. should not overwrite "shiz"
 2. should be able to return instead of callback(<>, <>, <>)
-
 */
