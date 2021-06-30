@@ -15,7 +15,7 @@ export default function transformer(file, { jscodeshift: j }) {
       wfFns
         .find(j.CallExpression)
         .filter(hasCallback)
-        .replaceWith(awaitFn({ tryCatch: false }));
+        .replaceWith(awaitFn({ tryCatch: true }));
 
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
@@ -131,8 +131,9 @@ function getFns(j) {
 
     // when tryContents is false, ideally we should be returning tryContents.body but
     // there is no way to do it so attaching it to parent fn's body
-    if (tryCatch) return tryStatement;
-    else {
+    if (tryCatch && hasCatchClause) {
+      return tryStatement;
+    } else {
       removeWrappingParenthesis(p, tryContents.body);
     }
   };
@@ -155,9 +156,8 @@ function getFns(j) {
 
     const formattedBody = j(p.node.body)
       // find all next() calls
-      .find(j.ExpressionStatement, {expression: { callee: { name: lastParam.name } }})
+      .find(j.ExpressionStatement, { expression: { callee: { name: lastParam.name } } })
       .replaceWith((p) => {
-        console.log("p.node", p.node);
         const cbHandlerArgs = p.node.expression.arguments;
         const argsLength = cbHandlerArgs.length;
         if (argsLength === 0) return null;
@@ -174,8 +174,8 @@ function getFns(j) {
         } else {
           // return single argument or return array of multiple elements
           // remove error from return
-        //  cbHandlerArgs.shift(); // argsLength length changes here
-        //  replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
+          //  cbHandlerArgs.shift(); // argsLength length changes here
+          //  replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
           replacementNode = null;
         }
         // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
