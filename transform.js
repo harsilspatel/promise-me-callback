@@ -20,9 +20,11 @@ export default function transformer(file, { jscodeshift: j }) {
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf)
         // convert async.waterfall's 2nd argument to await
-        .replaceWith(awaitFn({ tryCatch: true }))
+        .replaceWith(awaitFn({ tryCatch: false }))
         .replaceWith((p) => {
+          console.log("pppppppppppp", p.parent.node);
           // remove async.waterfall wrapper
+			return null;
           const wfBody = p.node.block.body;
           const asyncWaterfallFns = wfBody.shift();
 
@@ -33,7 +35,7 @@ export default function transformer(file, { jscodeshift: j }) {
 
       // remove the async.waterfall() contents from block statement
       // and insert it in parent's body
-      removeWrappingParenthesis(wf, wf.node.body);
+       // removeWrappingParenthesis(wf, wf.node.body);
     })
     .toSource();
 }
@@ -88,7 +90,7 @@ function getFns(j) {
     node.comments = comments;
   };
 
-  const awaitFn = ({}) => (p) => {
+  const awaitFn = ({tryCatch}) => (p) => {
     // ensure parent function is converted to an `await` fn
     const parent = convertParentFnAsync(p);
 
@@ -115,7 +117,9 @@ function getFns(j) {
 
     // if more than 1 values then destructure variables from an
     const variableDeclaratorId = returnValuesCount > 1 ? j.arrayPattern(cbParams) : cbParams[0];
-    // if it is returning a value declare the variable
+
+    // if it is returning a value declare the variable(s)
+    // if it has a try-catch block, declare the variable outside the blocks and assign the return value
     const variablesAssignment = j.expressionStatement(j.assignmentExpression("=", variableDeclaratorId, awaitExpression));
     const variablesDeclaration = j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)]);
     const awaitWrapperExpr = hasReturnValue ? (hasCatchClause ? variablesAssignment : variablesDeclaration) : expressionStatement;
@@ -139,9 +143,15 @@ function getFns(j) {
 
     // when tryContents is false, ideally we should be returning tryContents.body but
     // there is no way to do it so attaching it to parent fn's body
-    if (hasCatchClause) {
+    if (tryCatch && hasCatchClause) {
       return tryStatement;
+      // CHECKPOINT ===============================================================================================================================================
+      // look into declaring variables outside try-catch blocks
+      const x = createBlockStatement([tryStatement]);
+      removeWrappingParenthesis(p, x.body);
+      console.log("after shit");
     } else {
+      console.log("tryContents.body", tryContents);
       removeWrappingParenthesis(p, tryContents.body);
     }
   };
