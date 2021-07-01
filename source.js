@@ -9,15 +9,12 @@ function validateKong(request, callback) {
         });
       },
       function (project, next) {
-        if (isServerRequest) return next(null, project, null);
         AttendantModel.findOne({ _id: attendantId, deleted: false }, function (error, attendant) {
           if (error) {
             logger.error('Error occurred while retrieving attendant');
             next(ApiError.unauthorized());
-          } else if (!attendant) {
-            logger.error('Attendant not found');
-            next(ApiError.unauthorized());
           } else {
+            console.log("bleh");
             next(null, project, attendant);
           }
         });

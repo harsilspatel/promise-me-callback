@@ -15,23 +15,27 @@ export default function transformer(file, { jscodeshift: j }) {
       wfFns
         .find(j.CallExpression)
         .filter(hasCallback)
-        .replaceWith(awaitFn({ tryCatch: false }));
-
+        .replaceWith(awaitFn({ tryCatch: true }));
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf)
-        .replaceWith(awaitFn({ tryCatch: true }))
+        // convert async.waterfall's 2nd argument to await
+        .replaceWith(awaitFn({ tryCatch: false }))
         .replaceWith((p) => {
+          console.log("pppppppppppp", p.parent.node);
+          // remove async.waterfall wrapper
+			return null;
           const wfBody = p.node.block.body;
           const asyncWaterfallFns = wfBody.shift();
-          const fns = asyncWaterfallFns.declarations[0].init.argument.arguments[0].elements;
 
+          // if it's an assignment then we get nodes from `asyncWaterfallFns.expression.right` if not it will be variable declaration
+          const fns = (asyncWaterfallFns.expression ? asyncWaterfallFns.expression.right : asyncWaterfallFns.declarations[0].init).argument.arguments[0].elements;
           return createBlockStatement(fns.concat(wfBody));
         });
 
       // remove the async.waterfall() contents from block statement
       // and insert it in parent's body
-      removeWrappingParenthesis(wf, wf.node.body);
+       // removeWrappingParenthesis(wf, wf.node.body);
     })
     .toSource();
 }
@@ -80,7 +84,13 @@ function getFns(j) {
     grandparentNodeBody.splice(parentNodePosition, 1, ...replacementContents);
   };
 
-  const awaitFn = ({ tryCatch }) => (p) => {
+  const addComment = (node, comment) => {
+    const comments = node.comments || [];
+    comments.push(j.commentLine(" TODO(codemods): No error clause found", true, false));
+    node.comments = comments;
+  };
+
+  const awaitFn = ({tryCatch}) => (p) => {
     // ensure parent function is converted to an `await` fn
     const parent = convertParentFnAsync(p);
 
@@ -92,8 +102,8 @@ function getFns(j) {
 
     // get the error identifier
     const firstParam = cbParams.shift();
-    const returnValues = cbParams.length;
-    const hasReturnValue = !!returnValues;
+    const returnValuesCount = cbParams.length;
+    const hasReturnValue = !!returnValuesCount;
 
     // check if there is an if statement checking for error
     const firstCbExpr = callbackFn.body.body[0];
@@ -106,33 +116,42 @@ function getFns(j) {
     const expressionStatement = j.expressionStatement(awaitExpression);
 
     // if more than 1 values then destructure variables from an
-    const variableDeclaratorId = returnValues > 1 ? j.arrayPattern(cbParams) : cbParams[0];
-    // if it is returning a value declare the variable
-    const awaitWrapperExpr = hasReturnValue ? j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)]) : expressionStatement;
+    const variableDeclaratorId = returnValuesCount > 1 ? j.arrayPattern(cbParams) : cbParams[0];
+
+    // if it is returning a value declare the variable(s)
+    // if it has a try-catch block, declare the variable outside the blocks and assign the return value
+    const variablesAssignment = j.expressionStatement(j.assignmentExpression("=", variableDeclaratorId, awaitExpression));
+    const variablesDeclaration = j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)]);
+    const awaitWrapperExpr = hasReturnValue ? (hasCatchClause ? variablesAssignment : variablesDeclaration) : expressionStatement;
 
     let afterAwaitExprs = [];
 
     // if the catch clause is found then everything inside `else` will go below await statement
     if (hasCatchClause) {
-      afterAwaitExprs = afterAwaitExprs.concat(firstCbExpr.alternate ? firstCbExpr.alternate.body : []);
+      // if the alternate an else-if then we have to concat `firstCbExpr.alternate` else it will be a blockStatement so concat `firstCbExpr.alternate.body`
+      afterAwaitExprs = afterAwaitExprs.concat(firstCbExpr.alternate ? firstCbExpr.alternate.body || firstCbExpr.alternate || [] : []);
       // remove the `if-else`
       callbackFn.body.body.shift();
     } else {
-      const comments = awaitWrapperExpr.comments || [];
-      comments.push(j.commentLine(" TODO(codemods): No error clause found", true, false));
-      awaitWrapperExpr.comments = comments;
+      addComment(awaitWrapperExpr, " TODO(codemods): No error clause found");
     }
 
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
-
     const tryContents = createBlockStatement([awaitWrapperExpr, ...afterAwaitExprs]);
     const tryStatement = j.tryStatement(tryContents, j.catchClause(firstParam, null, catchBody));
 
     // when tryContents is false, ideally we should be returning tryContents.body but
     // there is no way to do it so attaching it to parent fn's body
-    if (tryCatch) return tryStatement;
-    else {
+    if (tryCatch && hasCatchClause) {
+      return tryStatement;
+      // CHECKPOINT ===============================================================================================================================================
+      // look into declaring variables outside try-catch blocks
+      const x = createBlockStatement([tryStatement]);
+      removeWrappingParenthesis(p, x.body);
+      console.log("after shit");
+    } else {
+      console.log("tryContents.body", tryContents);
       removeWrappingParenthesis(p, tryContents.body);
     }
   };
@@ -143,11 +162,21 @@ function getFns(j) {
     // get fn's last arg, most cases it will be `next`
     const lastParam = p.node.params[params.length - 1];
 
+    j(p.node.body)
+      .find(j.IfStatement, { consequent: { type: "ReturnStatement", argument: { type: "CallExpression", callee: { name: lastParam.name } } } })
+      .forEach((p) => {
+        const ifParentBody = p.parent.node.body;
+        const ifIndex = ifParentBody.indexOf(p.node);
+        const everythingAfterIf = ifParentBody.splice(ifIndex + 1, ifParentBody.length);
+        p.node.test = j.unaryExpression("!", p.node.test, true); // negate the if's test
+        p.node.consequent = createBlockStatement(everythingAfterIf);
+      });
+
     const formattedBody = j(p.node.body)
       // find all next() calls
-      .find(j.CallExpression, { callee: { name: lastParam.name } })
+      .find(j.ExpressionStatement, { expression: { callee: { name: lastParam.name } } })
       .replaceWith((p) => {
-        const cbHandlerArgs = p.node.arguments;
+        const cbHandlerArgs = p.node.expression.arguments;
         const argsLength = cbHandlerArgs.length;
         if (argsLength === 0) return null;
 
@@ -163,12 +192,12 @@ function getFns(j) {
         } else {
           // return single argument or return array of multiple elements
           // remove error from return
-          cbHandlerArgs.shift(); // argsLength length changes here
-          console.log("p", p.parent.node);
-          replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
+          //  cbHandlerArgs.shift(); // argsLength length changes here
+          //  replacementNode = j.returnStatement(cbHandlerArgs.length === 1 ? cbHandlerArgs[0] : j.arrayExpression(cbHandlerArgs));
+          replacementNode = null;
         }
         // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
-        j(p.parent).replaceWith(replacementNode);
+        return replacementNode;
       });
 
     // remove the stuff from fn body
@@ -186,6 +215,7 @@ function getFns(j) {
     removeWrappingParenthesis
   };
 }
+
 /*
 TODO handle async.waterfall() scenarios like:
 function completed(err, project, attendant) {
@@ -204,5 +234,4 @@ function completed(err, project, attendant) {
   
 1. should not overwrite "shiz"
 2. should be able to return instead of callback(<>, <>, <>)
-
 */
