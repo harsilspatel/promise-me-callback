@@ -15,22 +15,21 @@ export default function transformer(file, { jscodeshift: j }) {
       wfFns
         .find(j.CallExpression)
         .filter(hasCallback)
-        .replaceWith(awaitFn({ tryCatch: true }));
+        .forEach(awaitFn({ tryCatch: true }));
       wfFns.find(j.FunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       wfFns.find(j.ArrowFunctionExpression).filter(filterImmediateFns).replaceWith(removeWrapperFn);
       j(wf)
         // convert async.waterfall's 2nd argument to await
-        .replaceWith(awaitFn({ tryCatch: false }))
+        .forEach(awaitFn({ tryCatch: false }))
         .replaceWith((p) => {
-          console.log("pppppppppppp", p.parent.node);
           // remove async.waterfall wrapper
-			return null;
-          const wfBody = p.node.block.body;
+          const wfBody = p.node.arguments;
           const asyncWaterfallFns = wfBody.shift();
 
           // if it's an assignment then we get nodes from `asyncWaterfallFns.expression.right` if not it will be variable declaration
-          const fns = (asyncWaterfallFns.expression ? asyncWaterfallFns.expression.right : asyncWaterfallFns.declarations[0].init).argument.arguments[0].elements;
-          return createBlockStatement(fns.concat(wfBody));
+          const fns = asyncWaterfallFns.elements || (asyncWaterfallFns.expression ? asyncWaterfallFns.expression.right : asyncWaterfallFns.declarations[0].init).argument.arguments[0].elements;
+        const x = createBlockStatement(fns.concat(wfBody));
+          return x
         });
 
       // remove the async.waterfall() contents from block statement
@@ -144,14 +143,9 @@ function getFns(j) {
     // when tryContents is false, ideally we should be returning tryContents.body but
     // there is no way to do it so attaching it to parent fn's body
     if (tryCatch && hasCatchClause) {
-      return tryStatement;
-      // CHECKPOINT ===============================================================================================================================================
-      // look into declaring variables outside try-catch blocks
-      const x = createBlockStatement([tryStatement]);
+      const x = createBlockStatement([j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId)]), tryStatement]);
       removeWrappingParenthesis(p, x.body);
-      console.log("after shit");
     } else {
-      console.log("tryContents.body", tryContents);
       removeWrappingParenthesis(p, tryContents.body);
     }
   };
@@ -214,6 +208,10 @@ function getFns(j) {
     convertParentFnAsync,
     removeWrappingParenthesis
   };
+}
+
+function c () {
+  console.log
 }
 
 /*
