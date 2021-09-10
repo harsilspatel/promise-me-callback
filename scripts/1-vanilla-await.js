@@ -1,13 +1,13 @@
-const ERROR_KEYWORDS = ['e', 'err', 'error', 'formattedError'];
+const ERROR_KEYWORDS = ["e", "err", "error", "formattedError"];
 
 module.exports = (file, api, options) => {
   const { jscodeshift: j } = api;
   const root = j(file.source);
 
-  const isFnNode = (n) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(n.type);
+  const isFnNode = (n) => ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(n.type);
   const isAsyncLibraryNode = (n) => {
     try {
-      return n.callee.object.name.toLowerCase() === 'async';
+      return n.callee.object.name.toLowerCase() === "async";
     } catch (e) {
       return false;
     }
@@ -27,10 +27,25 @@ module.exports = (file, api, options) => {
       _hasCallback = false;
     }
 
+    let isThenCatchPromise;
+    try {
+      isThenCatchPromise = ["then", "catch"].includes(node.callee.property.name);
+    } catch (e) {
+      isThenCatchPromise = false;
+    }
+
+    let isEventHandler;
+    try {
+      isEventHandler = node.callee.property.name === "on";
+    } catch (e) {
+      isEventHandler = false;
+    }
+
     const isWithinAsync = j(p).closest(j.CallExpression, isAsyncLibraryNode).size() > 0;
 
-    // we also do not transform all nodes within async.waterfall()
-    return _hasCallback && !isWithinAsync;
+    // we do not transform all nodes within async.waterfall()
+    // we also do not want to transform then-catch promises
+    return _hasCallback && !isWithinAsync && !isThenCatchPromise && !isEventHandler;
   };
 
   const awaitFn = (p) => {
@@ -61,12 +76,11 @@ module.exports = (file, api, options) => {
     if (!callbackFn.body.body && callbackFn.body.callee) callbackFn.body.body = [j.returnStatement(callbackFn.body.callee)];
 
     const firstCbExpr = callbackFn.body.body[0];
-    const hasCatchClause =
-      firstCbExpr.type === 'IfStatement' && firstCbExpr.test.type === 'Identifier' && firstCbExpr.test.name === firstParam.name;
+    const hasCatchClause = firstCbExpr.type === "IfStatement" && firstCbExpr.test.type === "Identifier" && firstCbExpr.test.name === firstParam.name;
 
     // if there is, then all it's contents go to the body of `catch` clause
     const catchBody = hasCatchClause
-      ? firstCbExpr.consequent.type === 'BlockStatement'
+      ? firstCbExpr.consequent.type === "BlockStatement"
         ? firstCbExpr.consequent
         : j.blockStatement([firstCbExpr.consequent])
       : j.blockStatement([]);
@@ -78,30 +92,25 @@ module.exports = (file, api, options) => {
     // if more than 1 values then destructure variables from an
     const variableDeclaratorId = returnValues > 1 ? j.arrayPattern(cbParams) : cbParams[0];
     // if it is returning a value declare the variable
-    const awaitWrapperExpr = hasReturnValue
-      ? j.variableDeclaration('let', [j.variableDeclarator(variableDeclaratorId, awaitExpression)])
-      : expressionStatement;
+    const awaitWrapperExpr = hasReturnValue ? j.variableDeclaration("let", [j.variableDeclarator(variableDeclaratorId, awaitExpression)]) : expressionStatement;
 
     let afterAwaitExprs = [];
 
     // if the catch clause is found then everything inside `else` will go below await statement
     if (hasCatchClause) {
-      afterAwaitExprs = afterAwaitExprs.concat(firstCbExpr.alternate ? firstCbExpr.alternate.body : []);
+      afterAwaitExprs = afterAwaitExprs.concat(firstCbExpr.alternate ? firstCbExpr.alternate.body || [firstCbExpr.alternate] : []);
       // remove the `if-else`
       callbackFn.body.body.shift();
     } else {
       const comments = awaitWrapperExpr.comments || [];
-      comments.push(j.commentLine(' TODO(codemods): No error clause found', true, false));
+      comments.push(j.commentLine(" TODO(codemods): No error clause found", true, false));
       awaitWrapperExpr.comments = comments;
     }
 
     // everything after `if-else` also goes after await call
     afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
 
-    const tryStatement = j.tryStatement(
-      j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs].filter(Boolean)),
-      j.catchClause(firstParam, null, catchBody),
-    );
+    const tryStatement = j.tryStatement(j.blockStatement([awaitWrapperExpr, ...afterAwaitExprs].filter(Boolean)), j.catchClause(firstParam, null, catchBody));
     return tryStatement;
   };
 
