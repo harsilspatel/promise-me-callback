@@ -19,7 +19,11 @@ module.exports = (file, api, options) => {
     if (!paramsLength) return p.node;
 
     // get fn's last param
-    const lastParam = p.node.params[paramsLength - 1];
+    const lastItem = p.node.params[paramsLength - 1];
+    // lastItem could be an `AssignmentPattern`,
+    // when the last value is being defaulted for e.g. (a, b, c = "default") => {},
+    // so getting the .left which will be the `Identifier`
+    const lastParam = lastItem.left || lastItem;
 
     if (!INCLUDE_LIST.includes(lastParam.name)) {
       return p.node;
