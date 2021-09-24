@@ -1,3 +1,5 @@
+const INCLUDE_LIST = ['callback', 'cb', 'next', 'done'];
+
 module.exports = (file, api, options) => {
   const { jscodeshift: j } = api;
   const root = j(file.source);
@@ -18,6 +20,10 @@ module.exports = (file, api, options) => {
 
     // get fn's last param
     const lastParam = p.node.params[paramsLength - 1];
+
+    if (!INCLUDE_LIST.includes(lastParam.name)) {
+      return p.node;
+    }
 
     const wasLastParamCallback =
       j(p)
@@ -61,8 +67,12 @@ module.exports = (file, api, options) => {
         })
         .size() > 0;
 
-    // if the last param was a callback then after removing the callbacks, remove that param from fn
-    wasLastParamCallback && p.node.params.pop();
+    // if the last param was a callback then after removing the callbacks,
+    // remove that param from fn and make it async
+    if (wasLastParamCallback) {
+      p.node.params.pop();
+      p.node.async = true;
+    }
 
     return p.node;
   };
