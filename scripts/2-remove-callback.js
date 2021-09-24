@@ -4,7 +4,8 @@ module.exports = (file, api, options) => {
 
   const isAsyncLibraryNode = (n) => {
     try {
-      return n.callee.object.name.toLowerCase() === "async";
+      return false;
+      return n.callee.object.name.toLowerCase() === 'async';
     } catch (e) {
       return false;
     }
@@ -31,7 +32,7 @@ module.exports = (file, api, options) => {
           const errorArg = cbHandlerArgs[0] || {};
           // TODO(harsilspatel): handle return next(err, <>) instances
           // if it is like next(<singleParam>) then it likely is an error
-          if (argsLength === 1 && !(errorArg.type === "Literal" && errorArg.value === null)) {
+          if (argsLength === 1 && !(errorArg.type === 'Literal' && errorArg.value === null)) {
             removeReturn = true;
             replacementNode = j.throwStatement(errorArg);
           } else {
@@ -43,7 +44,7 @@ module.exports = (file, api, options) => {
             replacementNode = j.returnStatement(
               cbHandlerArgs.length <= 1
                 ? cbHandlerArgs[0] || null // if it's 0 arguments it'll pick up the null
-                : j.arrayExpression(cbHandlerArgs)
+                : j.arrayExpression(cbHandlerArgs),
             );
           }
 
@@ -51,7 +52,8 @@ module.exports = (file, api, options) => {
 
           const parentNodeCollection = j(p.parent);
           const shouldRemoveParent =
-            (removeReturn && parentNodeCollection.isOfType(j.ReturnStatement)) || parentNodeCollection.isOfType(j.ExpressionStatement);
+            (removeReturn && parentNodeCollection.isOfType(j.ReturnStatement)) ||
+            parentNodeCollection.isOfType(j.ExpressionStatement);
           if (shouldRemoveParent) {
             replacementNode.comments = p.parent.node.comments || [];
             parentNodeCollection.replaceWith(replacementNode);
