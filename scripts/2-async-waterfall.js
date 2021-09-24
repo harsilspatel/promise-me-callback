@@ -1,4 +1,7 @@
 module.exports = (file, { jscodeshift: j }) => {
+  const isFnNode = (n) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(n.type);
+  const getNodeRange = ({ loc: { start, end } }) => `${start.line}:${start.column}; ${end.line}:${end.column}`;
+
   const isAsyncLib = (node) => {
     try {
       return node.callee.object.name.toLowerCase() === 'async' && node.callee.property.name.toLowerCase() === 'waterfall';
@@ -16,14 +19,31 @@ module.exports = (file, { jscodeshift: j }) => {
   const removeAsyncLib = (p) => {
     const { node } = p;
 
-    if (!(node.arguments.length === 2)) throw new Error('There are more args in async.waterfall()');
+    let parent = p;
+    while (parent) {
+      if (isFnNode(parent.node)) {
+        parent.node.async = true;
+        break;
+      }
+      parent = parent.parent;
+    }
+
+    if (node.arguments.length > 2)
+      throw new Error(`There are more args in async.waterfall(); ${file.path}:${getNodeRange(node)}`);
     const tryFunctions = node.arguments[0].elements.map((fn) => fn.body.body).flat();
 
+    // callback could also be parent fn's callback identifier OR could even be missing
+    const hasCallback = node.arguments[1] && isFnNode(node.arguments[1]);
     const callbackFn = node.arguments[1];
-    const firstParam = callbackFn.params[0];
-    const firstCbExpr = callbackFn.body.body[0];
+    const callbackFnBody = !hasCallback ? [] : callbackFn.body.body;
+    const firstParam = !hasCallback ? null : callbackFn.params[0];
+    const firstCbExpr = !firstParam ? {} : callbackFnBody[0];
+
     const hasCatchClause =
-      firstCbExpr.type === 'IfStatement' && firstCbExpr.test.type === 'Identifier' && firstCbExpr.test.name === firstParam.name;
+      firstParam &&
+      firstCbExpr.type === 'IfStatement' &&
+      firstCbExpr.test.type === 'Identifier' &&
+      firstCbExpr.test.name === firstParam.name;
 
     // if there is, then all it's contents go to the body of `catch` clause
     const catchBody = hasCatchClause
@@ -32,7 +52,8 @@ module.exports = (file, { jscodeshift: j }) => {
         : j.blockStatement([firstCbExpr.consequent])
       : j.blockStatement([]);
 
-    const catchClause = j.catchClause(firstParam, null, catchBody);
+    const catchClause = j.catchClause(firstParam || j.identifier('error'), null, catchBody);
+
     let afterAwaitExprs = [];
     // if the catch clause is found then everything inside `else` will go below await statement
     if (hasCatchClause) {
@@ -40,7 +61,7 @@ module.exports = (file, { jscodeshift: j }) => {
         firstCbExpr.alternate ? firstCbExpr.alternate.body || [firstCbExpr.alternate] : [],
       );
       // remove the `if-else`
-      callbackFn.body.body.shift();
+      callbackFnBody.shift();
       addComments(
         catchClause,
         (firstCbExpr.comments || []).map((c) => c.value),
@@ -48,10 +69,11 @@ module.exports = (file, { jscodeshift: j }) => {
     }
 
     // everything after `if-else` also goes after await call
-    afterAwaitExprs = afterAwaitExprs.concat(callbackFn.body.body);
+    afterAwaitExprs = afterAwaitExprs.concat(callbackFnBody);
 
     const tryStatement = j.tryStatement(j.blockStatement([...tryFunctions, ...afterAwaitExprs].filter(Boolean)), catchClause);
     !hasCatchClause && addComments(tryStatement, [' TODO(codemods): No error clause found']);
+
     return tryStatement;
   };
 
