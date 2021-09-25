@@ -1,3 +1,5 @@
+// https://astexplorer.net/#/gist/3cd454ec85e9403f56bb20d9af6eeee6
+
 module.exports = (file, api) => {
   const j = api.jscodeshift;
 

@@ -1,8 +1,19 @@
+// https://astexplorer.net/#/gist/fc80cd237d9f3d17a85152e937ec93b3/
+
 const ERROR_KEYWORDS = ['e', 'err', 'error', 'formattedError'];
 
 module.exports = (file, api, options) => {
   const { jscodeshift: j } = api;
   const root = j(file.source);
+
+  const getNodeRange = ({ loc: { start, end } }) => `${file.path}:${start.line}:${start.column}; ${end.line}:${end.column}`;
+  const functionWrapper = (func) => (p) => {
+    try {
+      return func(p);
+    } catch (error) {
+      console.error(`Issue at ${getNodeRange(p.node)}. Error: ${error}`);
+    }
+  };
 
   const isFnNode = (n) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(n.type);
   const isAsyncLibraryNode = (n) => {
@@ -77,7 +88,10 @@ module.exports = (file, api, options) => {
 
     const firstCbExpr = callbackFn.body.body[0];
     const hasCatchClause =
-      firstCbExpr.type === 'IfStatement' && firstCbExpr.test.type === 'Identifier' && firstCbExpr.test.name === firstParam.name;
+      firstCbExpr &&
+      firstCbExpr.type === 'IfStatement' &&
+      firstCbExpr.test.type === 'Identifier' &&
+      firstCbExpr.test.name === firstParam.name;
 
     // if there is, then all it's contents go to the body of `catch` clause
     const catchBody = hasCatchClause
@@ -122,5 +136,5 @@ module.exports = (file, api, options) => {
     return tryStatement;
   };
 
-  return root.find(j.CallExpression).filter(hasCallback).replaceWith(awaitFn).toSource();
+  return root.find(j.CallExpression).filter(hasCallback).replaceWith(functionWrapper(awaitFn)).toSource();
 };

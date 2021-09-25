@@ -1,3 +1,5 @@
+// https://astexplorer.net/#/gist/c10ff2a5d406a1d0a4adc8a5366bae09/
+
 const INCLUDE_LIST = ['callback', 'cb', 'next', 'done'];
 
 module.exports = (file, api, options) => {
@@ -60,15 +62,15 @@ module.exports = (file, api, options) => {
                 ? cbHandlerArgs[0] || null // if it's 0 arguments it'll pick up the null
                 : j.arrayExpression(cbHandlerArgs),
             );
-          }
 
-          if (isWithinAsyncLib) {
-            const returnRaw = getRawValue(replacementNode);
-            const commentedReturnValue = j.commentLine(` TODO(codemods): return within async: ${returnRaw}`, true, false);
-            const commentedReplacementNode = j.emptyStatement();
-            commentedReplacementNode.comments = getNodeComments(commentedReplacementNode);
-            commentedReplacementNode.comments.push(commentedReturnValue);
-            replacementNode = commentedReplacementNode;
+            if (isWithinAsyncLib) {
+              const returnRaw = getRawValue(replacementNode).replace(/\n/g, '');
+              const commentedReturnValue = j.commentLine(` TODO(codemods): return within async: ${returnRaw}`, true, false);
+              const commentedReplacementNode = j.emptyStatement();
+              commentedReplacementNode.comments = getNodeComments(commentedReplacementNode);
+              commentedReplacementNode.comments.push(commentedReturnValue);
+              replacementNode = commentedReplacementNode;
+            }
           }
 
           // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon

@@ -1,6 +1,17 @@
+// https://astexplorer.net/#/gist/fb9e9aa9b8febd28e9da4e4c5111e699/
+
 module.exports = (file, { jscodeshift: j }) => {
   const isFnNode = (n) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(n.type);
-  const getNodeRange = ({ loc: { start, end } }) => `${start.line}:${start.column}; ${end.line}:${end.column}`;
+  const getNodeRange = ({ loc: { start, end } }) => `${file.path}:${start.line}:${start.column}; ${end.line}:${end.column}`;
+
+  const functionWrapper = (func) => (p) => {
+    try {
+      return func(p);
+    } catch (error) {
+      console.error(`Issue at ${getNodeRange(p.node)}. Error: ${error}`);
+      throw error;
+    }
+  };
 
   const isAsyncLib = (node) => {
     try {
@@ -28,8 +39,7 @@ module.exports = (file, { jscodeshift: j }) => {
       parent = parent.parent;
     }
 
-    if (node.arguments.length > 2)
-      throw new Error(`There are more args in async.waterfall(); ${file.path}:${getNodeRange(node)}`);
+    if (node.arguments.length > 2) throw new Error(`There are more args in async.waterfall(); ${getNodeRange(node)}`);
     const tryFunctions = node.arguments[0].elements.map((fn) => fn.body.body).flat();
 
     // callback could also be parent fn's callback identifier OR could even be missing
@@ -41,6 +51,7 @@ module.exports = (file, { jscodeshift: j }) => {
 
     const hasCatchClause =
       firstParam &&
+      firstCbExpr &&
       firstCbExpr.type === 'IfStatement' &&
       firstCbExpr.test.type === 'Identifier' &&
       firstCbExpr.test.name === firstParam.name;
