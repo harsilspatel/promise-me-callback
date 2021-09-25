@@ -6,12 +6,15 @@ module.exports = (file, api, options) => {
 
   const isAsyncLibraryNode = (n) => {
     try {
-      return false;
       return n.callee.object.name.toLowerCase() === 'async';
     } catch (e) {
       return false;
     }
   };
+
+  const getRawValue = (node) => j(node).toSource();
+  const getNodeComments = (node) => node.comments || [];
+  const findClosestAsyncLibraryNode = (p) => j(p).closest(j.CallExpression, isAsyncLibraryNode);
 
   const replaceCallbacks = (p) => {
     const paramsLength = p.node.params.length;
@@ -32,10 +35,11 @@ module.exports = (file, api, options) => {
     const wasLastParamCallback =
       j(p)
         .find(j.CallExpression, { callee: { name: lastParam.name } })
-        .filter((p) => j(p).closest(j.CallExpression, isAsyncLibraryNode).size() === 0) // should not be within async
         .forEach((p) => {
           const cbHandlerArgs = p.node.arguments || [];
           const argsLength = cbHandlerArgs.length;
+
+          const isWithinAsyncLib = findClosestAsyncLibraryNode(p).size() > 0;
 
           let removeReturn = false;
           let replacementNode = null;
@@ -58,14 +62,22 @@ module.exports = (file, api, options) => {
             );
           }
 
-          // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
+          if (isWithinAsyncLib) {
+            const returnRaw = getRawValue(replacementNode);
+            const commentedReturnValue = j.commentLine(` TODO(codemods): return within async: ${returnRaw}`, true, false);
+            const commentedReplacementNode = j.emptyStatement();
+            commentedReplacementNode.comments = getNodeComments(commentedReplacementNode);
+            commentedReplacementNode.comments.push(commentedReturnValue);
+            replacementNode = commentedReplacementNode;
+          }
 
+          // replacing parent as it's an ExpressionStatement i.e. one that ends with a semi-colon
           const parentNodeCollection = j(p.parent);
           const shouldRemoveParent =
             (removeReturn && parentNodeCollection.isOfType(j.ReturnStatement)) ||
             parentNodeCollection.isOfType(j.ExpressionStatement);
           if (shouldRemoveParent) {
-            replacementNode.comments = p.parent.node.comments || [];
+            replacementNode.comments = getNodeComments(p.parent.node).concat(getNodeComments(replacementNode));
             parentNodeCollection.replaceWith(replacementNode);
           }
         })
