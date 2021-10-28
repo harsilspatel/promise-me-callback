@@ -1,31 +1,51 @@
 # promise-me-callback
-> codemods for converting callbacks to promises 🚀
+> codemods for refactoring callbacks based functions to async-await syntax 🚀
 
-## AST transformation example
-Object: Refactor ternary to logical where possible
-### Source
-```js
-const tz = inputTz ? inputTz : "Australia/Melbourne";
-const foo = bar ? baz : "";
+## Usage
+```bash
+npm install -g jscodeshift
+jscodeshift -t ./path/to/transformer.js ./path/to/js/source/**/*.js
 ```
-
-### Codemod
+### Refactoring callee
 ```js
-export default function transformer(file, api) {
-  const j = api.jscodeshift;
-
-  return j(file.source)
-    .find(j.ConditionalExpression) // {test} ? {consequent} : {alternate}
-  	.filter(path => path.node.test.name === path.node.consequent.name)
- 	.replaceWith(p => {
-    	return j.logicalExpression("||", j.identifier(p.node.test.name), p.node.alternate)
-    })
-    .toSource();
+// source.js
+const squareRoot = (x, callback) => {
+  if ((x) < 0) {
+    callback(new Error('MathDomainError: square root of a negative number does not exist'))
+  }
+  const sqRt = Math.sqrt(x); // call me a math whiz
+  callback(null, sqRt);
 }
 ```
 
-### Output
 ```js
-const tz = inputTz || "Australia/Melbourne";
-const foo = bar ? baz : "";
+// source.js transformed with remove-callback.js
+const squareRoot = async x => {
+  if ((x) < 0) {
+    throw new Error('MathDomainError: square root of a negative number does not exist');
+  }
+  const sqRt = Math.sqrt(x); // call me a math whiz
+  return sqRt;
+}
+```
+
+### Refactoring caller
+```js
+// source.js
+squareRoot(magicNumber, (error, magicNumberSquareRoot) => {
+  if (err) {
+    // ignoring error 'cause yolo
+  }
+  console.log(`Square root of ${magicNumber} is ${magicNumberSquareRoot}`)
+})
+```
+
+```js
+// source.js transformed with await-function.js
+try {
+  let magicNumberSquareRoot = await squareRoot(magicNumber);
+  console.log(`Square root of ${magicNumber} is ${magicNumberSquareRoot}`)
+} catch (error) {
+  // ignoring error 'cause yolo
+};
 ```
