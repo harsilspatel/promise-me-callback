@@ -12,6 +12,7 @@ module.exports = (file, api, options) => {
       return func(p);
     } catch (error) {
       console.error(`Issue at ${getNodeRange(p.node)}. Error: ${error}`);
+      throw error;
     }
   };
 
