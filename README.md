@@ -49,3 +49,6 @@ try {
   // ignoring error 'cause yolo
 };
 ```
+
+#### License
+[MIT](https://github.com/localz/promise-me-callback/blob/master/LICENSE)
