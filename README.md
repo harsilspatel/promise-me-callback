@@ -7,8 +7,8 @@ npm install -g jscodeshift
 jscodeshift -t ./path/to/transformer.js ./path/to/js/source/**/*.js
 ```
 ### Refactoring callee
+###### callee.js
 ```js
-// source.js
 const squareRoot = (x, callback) => {
   if ((x) < 0) {
     callback(new Error('MathDomainError: square root of a negative number does not exist'))
@@ -18,8 +18,8 @@ const squareRoot = (x, callback) => {
 }
 ```
 
+###### callee.js transformed with `remove-callback.js`
 ```js
-// source.js transformed with remove-callback.js
 const squareRoot = async x => {
   if ((x) < 0) {
     throw new Error('MathDomainError: square root of a negative number does not exist');
@@ -30,8 +30,8 @@ const squareRoot = async x => {
 ```
 
 ### Refactoring caller
+###### caller.js
 ```js
-// source.js
 squareRoot(magicNumber, (error, magicNumberSquareRoot) => {
   if (err) {
     // ignoring error 'cause yolo
@@ -39,9 +39,8 @@ squareRoot(magicNumber, (error, magicNumberSquareRoot) => {
   console.log(`Square root of ${magicNumber} is ${magicNumberSquareRoot}`)
 })
 ```
-
+###### caller.js transformed with `await-function.js`
 ```js
-// source.js transformed with await-function.js
 try {
   let magicNumberSquareRoot = await squareRoot(magicNumber);
   console.log(`Square root of ${magicNumber} is ${magicNumberSquareRoot}`)
